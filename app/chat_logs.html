@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Chatbot Logs</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;height:100vh;overflow:hidden;background:#e5ddd5}
+#sidebar{width:300px;background:#fff;border-right:1px solid #ddd;display:flex;flex-direction:column;flex-shrink:0}
+#sidebar-header{padding:14px 16px;font-weight:700;font-size:15px;background:#075e54;color:#fff;display:flex;align-items:center;justify-content:space-between}
+#filter-bar{padding:8px 12px;border-bottom:1px solid #eee;background:#f8f8f8;display:flex;gap:6px;flex-direction:column}
+#search-input{width:100%;padding:7px 12px;border:1px solid #ddd;border-radius:20px;font-size:13px;outline:none;background:#fff}
+#filter-btns{display:flex;gap:6px}
+.fbtn{flex:1;padding:5px 0;border:1px solid #ddd;border-radius:16px;font-size:12px;cursor:pointer;background:#fff;color:#555;font-weight:500}
+.fbtn.active{background:#075e54;color:#fff;border-color:#075e54}
+.fbtn.deflect-btn.active{background:#c62828;border-color:#c62828}
+#user-list{overflow-y:auto;flex:1}
+.user-item{padding:12px 16px;cursor:pointer;border-bottom:1px solid #f0f0f0;position:relative}
+.user-item:hover{background:#f5f5f5}
+.user-item.active{background:#d9fdd3}
+.user-waid{font-weight:600;font-size:14px}
+.user-meta{font-size:11px;color:#999;margin-top:3px}
+.deflect-dot{display:inline-block;width:8px;height:8px;background:#c62828;border-radius:50%;margin-left:6px;vertical-align:middle}
+#chat-panel{flex:1;display:flex;flex-direction:column;min-width:0}
+#chat-header{padding:14px 18px;font-weight:600;font-size:15px;background:#075e54;color:#fff}
+#chat-body{flex:1;overflow-y:auto;padding:16px 20px}
+.turn{margin-bottom:16px}
+.turn-ts{text-align:center;font-size:11px;color:#888;margin-bottom:6px}
+.deflect-badge{text-align:center;font-size:11px;color:#c62828;font-weight:600;margin-bottom:6px;background:#ffebee;padding:3px 8px;border-radius:10px;display:inline-block;width:100%}
+.row-user{display:flex;justify-content:flex-end;margin-bottom:4px}
+.row-bot{display:flex;justify-content:flex-start;margin-bottom:4px}
+.bubble{max-width:65%;padding:9px 13px;border-radius:8px;font-size:14px;line-height:1.5;word-wrap:break-word;white-space:pre-wrap}
+.bubble-user{background:#d9fdd3;border-radius:8px 8px 0 8px;box-shadow:0 1px 1px rgba(0,0,0,.08)}
+.bubble-bot{background:#fff;border-radius:8px 8px 8px 0;box-shadow:0 1px 1px rgba(0,0,0,.08)}
+.turn.deflected .bubble-bot{background:#ffebee}
+img.thumb{max-width:180px;border-radius:6px;display:block;margin-bottom:4px;cursor:pointer}
+#empty{color:#aaa;text-align:center;margin-top:100px;font-size:15px}
+#no-users{color:#aaa;text-align:center;padding:20px;font-size:13px}
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <div id="sidebar-header">
+    <span>&#128172; Chatbot Logs</span>
+  </div>
+  <div id="filter-bar">
+    <input id="search-input" placeholder="&#128269; Search number..." oninput="filterUsers()">
+    <div id="filter-btns">
+      <button class="fbtn active" id="btn-all" onclick="setFilter('all')">All</button>
+      <button class="fbtn deflect-btn" id="btn-deflected" onclick="setFilter('deflected')">&#9888; Deflected only</button>
+    </div>
+  </div>
+  <div id="user-list"><div id="no-users">Loading...</div></div>
+</div>
+<div id="chat-panel">
+  <div id="chat-header">Select a user</div>
+  <div id="chat-body"><div id="empty">&#8592; Select a user to view conversation</div></div>
+</div>
+<script>
+const TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+let allUsers = [];
+let selectedWaid = null;
+let currentFilter = 'all';
+
+async function loadUsers() {
+  try {
+    const deflected = currentFilter === 'deflected' ? '&deflected=true' : '';
+    const res = await fetch('/admin/chat-logs/api/users?token=' + TOKEN + deflected);
+    allUsers = await res.json();
+    renderUsers(allUsers);
+  } catch(e) {
+    document.getElementById('no-users').textContent = 'Failed to load users';
+  }
+}
+
+function setFilter(f) {
+  currentFilter = f;
+  document.getElementById('btn-all').classList.toggle('active', f === 'all');
+  document.getElementById('btn-deflected').classList.toggle('active', f === 'deflected');
+  loadUsers();
+}
+
+function filterUsers() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  renderUsers(allUsers.filter(u => u.waid.toLowerCase().includes(q)));
+}
+
+function renderUsers(users) {
+  const el = document.getElementById('user-list');
+  if (!users.length) {
+    el.innerHTML = '<div id="no-users">No users found</div>';
+    return;
+  }
+  el.innerHTML = '';
+  users.forEach(u => {
+    const div = document.createElement('div');
+    div.className = 'user-item' + (u.waid === selectedWaid ? ' active' : '');
+    const deflectIndicator = u.deflected_count > 0
+      ? '<span class="deflect-dot" title="' + u.deflected_count + ' deflected"></span>'
+      : '';
+    div.innerHTML = '<div class="user-waid">' + esc(u.waid) + deflectIndicator + '</div>'
+      + '<div class="user-meta">' + u.total + ' messages'
+      + (u.deflected_count > 0 ? ' &middot; <span style="color:#c62828">' + u.deflected_count + ' deflected</span>' : '')
+      + ' &middot; ' + fmtTs(u.last_ts) + '</div>';
+    div.addEventListener('click', function() { selectUser(u.waid); });
+    el.appendChild(div);
+  });
+}
+
+async function selectUser(waid) {
+  selectedWaid = waid;
+  filterUsers();
+  document.getElementById('chat-header').textContent = waid;
+  document.getElementById('chat-body').innerHTML = '<div id="empty">Loading...</div>';
+  try {
+    const res = await fetch('/admin/chat-logs/api/conversation/' + encodeURIComponent(waid) + '?token=' + TOKEN);
+    const msgs = await res.json();
+    renderConversation(msgs);
+  } catch(e) {
+    document.getElementById('chat-body').innerHTML = '<div id="empty">Failed to load</div>';
+  }
+}
+
+function renderConversation(msgs) {
+  const body = document.getElementById('chat-body');
+  if (!msgs.length) {
+    body.innerHTML = '<div id="empty">No messages</div>';
+    return;
+  }
+  body.innerHTML = '';
+  msgs.forEach(m => {
+    const turn = document.createElement('div');
+    turn.className = 'turn' + (m.is_deflected ? ' deflected' : '');
+
+    const ts = document.createElement('div');
+    ts.className = 'turn-ts';
+    ts.textContent = fmtTs(m.timestamp);
+    turn.appendChild(ts);
+
+    if (m.is_deflected) {
+      const badge = document.createElement('div');
+      badge.className = 'deflect-badge';
+      badge.textContent = '⚠ Deflected';
+      turn.appendChild(badge);
+    }
+
+    const rowUser = document.createElement('div');
+    rowUser.className = 'row-user';
+    const bubbleUser = document.createElement('div');
+    bubbleUser.className = 'bubble bubble-user';
+    if (m.image_url) {
+      const img = document.createElement('img');
+      img.className = 'thumb';
+      img.src = m.image_url;
+      img.addEventListener('click', function() { window.open(m.image_url); });
+      img.addEventListener('error', function() { this.style.display = 'none'; });
+      bubbleUser.appendChild(img);
+      bubbleUser.appendChild(document.createTextNode('📷 '));
+    }
+    bubbleUser.appendChild(document.createTextNode(m.user_message || ''));
+    rowUser.appendChild(bubbleUser);
+    turn.appendChild(rowUser);
+
+    const rowBot = document.createElement('div');
+    rowBot.className = 'row-bot';
+    const bubbleBot = document.createElement('div');
+    bubbleBot.className = 'bubble bubble-bot';
+    bubbleBot.textContent = m.bot_reply || '';
+    rowBot.appendChild(bubbleBot);
+    turn.appendChild(rowBot);
+
+    body.appendChild(turn);
+  });
+  body.scrollTop = body.scrollHeight;
+}
+
+function fmtTs(ts) {
+  if (!ts) return '';
+  return new Date(ts).toLocaleString();
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+loadUsers();
+</script>
+</body>
+</html>

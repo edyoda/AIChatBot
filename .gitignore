@@ -1,0 +1,21 @@
+# Secrets / local config — never commit
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Runtime artifacts
+dedup_rollback/
+*.log
+
+# Runtime data containing user conversations / OAuth secrets
+chatbot_logs.db
+*.db
+.zoho_mcp_token.json
+
+# Local diff file that contained real keys
+changes.diff

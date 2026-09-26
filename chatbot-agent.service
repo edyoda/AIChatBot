@@ -1,0 +1,17 @@
+[Unit]
+Description=Edyoda WATI ChatBot Agent (FastAPI) - WhatsApp replies
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/ubuntu/edyodalms2.0/lmsv2.0/ChatBotAgent
+EnvironmentFile=/home/ubuntu/edyodalms2.0/lmsv2.0/ChatBotAgent/.env
+ExecStart=/home/ubuntu/edyodalms2.0/lmsv2.0/ChatBotAgent/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 80
+Restart=always
+RestartSec=5
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

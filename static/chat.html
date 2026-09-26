@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EdYoda Chat</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #fff; --text: #1c1e21; --muted: #6b7280; --border: #e3e5e8;
+    --user: #4f46e5; --user-text: #fff; --bot: #eef0f3; --accent: #4f46e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111318; --panel: #1a1d24; --text: #e8eaed; --muted: #9aa0a6; --border: #2b2f38; --bot: #262a33; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; justify-content: center; }
+  .app { width: 100%; max-width: 760px; height: 100%; display: flex; flex-direction: column; background: var(--panel); border-inline: 1px solid var(--border); }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 16px; margin: 0; }
+  header small { color: var(--muted); display: block; font-weight: 400; }
+  button { font: inherit; cursor: pointer; }
+  .ghost { background: none; border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 6px 12px; }
+  .ghost:hover { border-color: var(--accent); }
+  #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 82%; padding: 10px 14px; border-radius: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.user { align-self: flex-end; background: var(--user); color: var(--user-text); border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: var(--bot); border-bottom-left-radius: 4px; }
+  .msg.error { align-self: center; background: none; color: #dc2626; font-size: 13px; }
+  .empty { margin: auto; color: var(--muted); text-align: center; }
+  .typing { display: inline-flex; gap: 4px; padding: 4px 0; }
+  .typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: b 1.2s infinite; }
+  .typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
+  @keyframes b { 0%, 60%, 100% { opacity: .3; transform: none; } 30% { opacity: 1; transform: translateY(-3px); } }
+  form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  textarea { flex: 1; resize: none; max-height: 140px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; outline: none; }
+  textarea:focus { border-color: var(--accent); }
+  #send { background: var(--accent); color: #fff; border: 0; border-radius: 12px; padding: 0 18px; }
+  #send:disabled { opacity: .5; cursor: default; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>EdYoda Assistant <small id="sid"></small></h1>
+    <button class="ghost" id="new" type="button">New chat</button>
+  </header>
+  <div id="log" aria-live="polite"></div>
+  <form id="form">
+    <textarea id="input" rows="1" placeholder="Type a message…" autofocus></textarea>
+    <button id="send" type="submit">Send</button>
+  </form>
+</div>
+
+<script>
+const log = document.getElementById('log');
+const input = document.getElementById('input');
+const send = document.getElementById('send');
+const KEY = 'edyoda_chat_session';
+let sessionId = null;
+let busy = false;
+
+const store = {
+  get() { try { return localStorage.getItem(KEY); } catch { return null; } },
+  set(v) { try { localStorage.setItem(KEY, v); } catch {} },
+};
+
+function add(role, text) {
+  log.querySelector('.empty')?.remove();
+  const el = document.createElement('div');
+  el.className = 'msg ' + role;
+  el.textContent = text;
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  return el;
+}
+
+function showEmpty() {
+  log.innerHTML = '<div class="empty">Ask me about EdYoda courses, batches or fees.</div>';
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) {
+    let d = ''; try { d = (await r.json()).detail; } catch {}
+    throw new Error(typeof d === 'string' && d ? d : 'Request failed (' + r.status + ')');
+  }
+  return r.json();
+}
+
+async function startSession(fresh) {
+  sessionId = fresh ? null : store.get();
+  if (!sessionId) {
+    sessionId = (await api('/api/session')).session_id;
+    store.set(sessionId);
+  }
+  document.getElementById('sid').textContent = sessionId;
+  log.innerHTML = '';
+  try {
+    const { messages } = await api('/api/history/' + encodeURIComponent(sessionId));
+    for (const m of messages) {
+      const role = m.role === 'user' ? 'user' : m.role === 'assistant' ? 'bot' : null;
+      const text = typeof m.content === 'string' ? m.content : '';
+      if (role && text) add(role, text);
+    }
+  } catch {}
+  if (!log.children.length) showEmpty();
+}
+
+document.getElementById('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text || busy) return;
+  busy = true; send.disabled = true;
+  input.value = ''; input.style.height = 'auto';
+  add('user', text);
+  const pending = add('bot', '');
+  pending.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
+  try {
+    const res = await api('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, message: text }),
+    });
+    pending.textContent = res.reply || '(no reply)';
+  } catch (err) {
+    pending.remove();
+    add('error', err.message);
+  } finally {
+    busy = false; send.disabled = false; input.focus();
+    log.scrollTop = log.scrollHeight;
+  }
+});
+
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    document.getElementById('form').requestSubmit();
+  }
+});
+input.addEventListener('input', () => {
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 140) + 'px';
+});
+
+document.getElementById('new').addEventListener('click', async () => {
+  if (sessionId) { try { await api('/api/session/' + encodeURIComponent(sessionId), { method: 'DELETE' }); } catch {} }
+  await startSession(true);
+});
+
+startSession(false).catch((err) => add('error', err.message));
+</script>
+</body>
+</html>

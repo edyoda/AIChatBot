@@ -1,0 +1,11 @@
+anthropic
+openai
+pinecone
+redis
+pydantic-settings
+python-dotenv
+fastapi
+uvicorn
+httpx
+anyio
+mcp==1.29.0
